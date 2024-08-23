@@ -87,3 +87,104 @@ class Gaussian(nn.Module):
     var = F.softplus(self.var(x))
     z = self.reparameterize(mu, var)
     return mu, var, z 
+
+
+############## transformers ##############
+
+
+class TransformerBlock(nn.Module):
+    def __init__(self, embed_dim, num_heads, ff_dim, dropout=0.1):
+        super(TransformerBlock, self).__init__()
+        self.self_attn = nn.MultiheadAttention(embed_dim, num_heads, 
+                                               dropout=dropout, batch_first=True)
+        self.cross_attn = nn.MultiheadAttention(embed_dim, num_heads, 
+                                                dropout=dropout, batch_first=True)
+        self.ffn = nn.Sequential(
+            nn.Linear(embed_dim, ff_dim),
+            nn.ReLU(),
+            nn.Linear(ff_dim, embed_dim),
+        )
+        self.layernorm1 = nn.LayerNorm(embed_dim)
+        self.layernorm2 = nn.LayerNorm(embed_dim)
+        self.layernorm3 = nn.LayerNorm(embed_dim)
+        self.dropout = nn.Dropout(dropout)
+
+    def forward(self, x, context=None, mask=None):
+        # we made x [batch, seq_len, embed_dim]
+        # Self-attention
+        attn_output, _ = self.self_attn(x, x, x, attn_mask=mask)
+        x = self.layernorm1(x + self.dropout(attn_output))
+
+        # Cross-attention (if context is provided)
+        if context is not None:
+            cross_attn_output, _ = self.cross_attn(x, context, context, attn_mask=mask)
+            x = self.layernorm2(x + self.dropout(cross_attn_output))
+
+        # Feedforward
+        ffn_output = self.ffn(x)
+        x = self.layernorm3(x + self.dropout(ffn_output))
+
+        return x
+
+
+# this will generate flux, in decoder
+class fluxTransformerModel(nn.Module):
+    def __init__(self, spectra_length,
+                 flux_embd_dim, 
+                 wavelength_embd_dim, 
+                 num_heads, 
+                 ff_dim, 
+                 num_layers,
+                 bottleneck_dim,
+                 dropout=0.1):
+        super(fluxTransformerModel, self).__init__()
+        self.init_flux_embd = nn.Parameter(torch.randn(spectra_length, flux_embd_dim))
+        self.transformerblocks = nn.ModuleList( [TransformerBlock(flux_embd_dim + wavelength_embd_dim, 
+                                                 num_heads, ff_dim, dropout) 
+                                                    for _ in range(num_layers)] 
+                                                )
+        self.contextfc = nn.Linear(bottleneck_dim, flux_embd_dim + wavelength_embd_dim ) # expand bottleneck to flux and wavelength
+    def forward(self, wavelength_embd, bottleneck, mask=None):
+        x = torch.cat([self.init_flux_embd.init_flux_embd[None, :, :], wavelength_embd], dim=-1)
+        bottleneck = self.contextfc(bottleneck)
+        for transformerblock in self.transformerblocks:
+            x = transformerblock(x, bottleneck, mask=mask)
+        return x
+
+# this will generate bottleneck, in encoder
+class bottleneckTransformerModel(nn.Module):
+    def __init__(self, bottleneck_length,
+                 flux_embd_dim, 
+                 wavelength_embd_dim,
+                 num_heads, 
+                 num_layers,
+                 bottleneck_dim,
+                 ff_dim, dropout=0.1):
+        super(bottleneckTransformerModel, self).__init__()
+        self.initbottleneck = nn.Parameter(torch.randn(bottleneck_length, flux_embd_dim + wavelength_embd_dim))
+        self.bottleneckfc = nn.Linear(flux_embd_dim + wavelength_embd_dim, bottleneck_dim)
+        self.transformerblocks =  nn.ModuleList( [TransformerBlock(flux_embd_dim + wavelength_embd_dim, 
+                                                    num_heads, ff_dim, dropout) 
+                                                 for _ in range(num_layers)] )
+    def forward(self, wavelength_embd, flux_embd, mask=None):
+        flux = torch.cat([flux_embd, wavelength_embd], dim=-1)
+        x = self.initbottleneck[None, :, :]
+        for transformerblock in self.transformerblocks:
+            x = transformerblock(x, flux, key_padding_mask=mask)
+        return self.bottleneckfc(x)
+        
+
+
+
+class TransformerModel(nn.Module):
+    def __init__(self, embed_dim, num_heads, ff_dim, num_layers, dropout=0.1):
+        super(TransformerModel, self).__init__()
+        self.layers = nn.ModuleList([
+            TransformerBlock(embed_dim, num_heads, ff_dim, dropout) 
+            for _ in range(num_layers)
+        ])
+
+    def forward(self, x, context=None):
+        for layer in self.layers:
+            x = layer(x, context)
+        return x
