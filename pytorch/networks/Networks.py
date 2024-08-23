@@ -311,6 +311,62 @@ class SpectraInferenceNet(nn.Module):
         return output
 
 
+# Generative Network
+class SpectraGenerativeNet(nn.Module):
+    def __init__(self, spectra_length,
+                 flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout=0.1):
+        super(SpectraGenerativeNet, self).__init__()
+        super(vanillaSpectraGenerativeNet, self).__init__()
+        self.wavelength_embd = nn.Linear(1, wavelength_embd_dim)
+
+        # p(x|z)
+        self.generativetransformer = fluxTransformerModel(
+                spectra_length,
+                flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                dropout)
+        self.makeflux = nn.Linear(flux_embd_dim + wavelength_embd_dim, 1)
+        self.y_mu = nn.Linear(num_classes, bottleneck_dim)
+        self.y_var = nn.Linear(num_classes, bottleneck_dim)
+
+    
+    # p(x|z)
+    def pxz(self, wavelength_embded, z, mask = None):
+        flux = self.generativetransformer(wavelength_embded, z, mask)
+        flux = self.makeflux(flux)
+        return flux
+        # p(z|y)
+
+    # p(z|y)
+    def pzy(self, y):
+        y_mu = self.y_mu(y)
+        y_var = F.softplus(self.y_var(y))
+        return y_mu, y_var
+    
+
+    def forward(self, z, y):
+        # p(z|y)
+        y_mu, y_var = self.pzy(y)
+        
+        # p(x|z)
+        x_rec = self.pxz(z)
+
+        output = {'y_mean': y_mu, 'y_var': y_var, 'x_rec': x_rec}
+        return output
+
+
+
 # vanillaVAE Network
 class vanillaVAENet(nn.Module):
     def __init__(self, x_dim, z_dim):
