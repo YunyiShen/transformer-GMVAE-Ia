@@ -221,10 +221,10 @@ class vanillaSpectraGenerativeNet(nn.Module):
         flux = self.makeflux(flux)
         return flux
 
-    def forward(self, z, y):
-        
+    def forward(self, wavelength,z, mask = None):
+        wavelength_embded = self.wavelength_embd(wavelength)
         # p(x|z)
-        x_rec = self.pxz(z)
+        x_rec = self.pxz(wavelength_embded,z)
 
         output = {'x_rec': x_rec}
         return output
@@ -355,16 +355,66 @@ class SpectraGenerativeNet(nn.Module):
         return y_mu, y_var
     
 
-    def forward(self, z, y):
+    def forward(self, wavelength, z, y, mask = None):
+        wavelength_embded = self.wavelength_embd(wavelength)
         # p(z|y)
         y_mu, y_var = self.pzy(y)
         
         # p(x|z)
-        x_rec = self.pxz(z)
+        x_rec = self.pxz(wavelength_embded, z, mask)
 
         output = {'y_mean': y_mu, 'y_var': y_var, 'x_rec': x_rec}
         return output
 
+
+class SpectraGMVAENet(nn.Module):
+    def __init__(self, spectra_length,
+                 flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout=0.1):
+        super(SpectraGMVAENet, self).__init__()
+
+        self.inference = SpectraInferenceNet(flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout)
+        self.generative = SpectraGenerativeNet(spectra_length,
+                 flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout)
+
+        # weight initialization
+        for m in self.modules():
+            if type(m) == nn.Linear or type(m) == nn.Conv2d or type(m) == nn.ConvTranspose2d:
+                torch.nn.init.xavier_normal_(m.weight)
+                if m.bias.data is not None:
+                    init.constant_(m.bias, 0) 
+
+    def forward(self, flux, wavelength, mask = None, temperature=1.0, hard=0):
+        #x = x.view(x.size(0), -1)
+        out_inf = self.inference(flux, wavelength, mask, temperature, hard)
+        z, y = out_inf['gaussian'], out_inf['categorical']
+        out_gen = self.generative(wavelength, z, y, mask)
+        
+        # merge output
+        output = out_inf
+        for key, value in out_gen.items():
+            output[key] = value
+        return output
 
 
 # vanillaVAE Network
