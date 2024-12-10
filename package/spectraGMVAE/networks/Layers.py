@@ -9,81 +9,81 @@ from torch.nn import functional as F
 
 # Flatten layer
 class Flatten(nn.Module):
-  def forward(self, x):
-    return x.view(x.size(0), -1)
+    def forward(self, x):
+        return x.view(x.size(0), -1)
 
-# Reshape layer    
+# Reshape layer        
 class Reshape(nn.Module):
-  def __init__(self, outer_shape):
-    super(Reshape, self).__init__()
-    self.outer_shape = outer_shape
-  def forward(self, x):
-    return x.view(x.size(0), *self.outer_shape)
+    def __init__(self, outer_shape):
+        super(Reshape, self).__init__()
+        self.outer_shape = outer_shape
+    def forward(self, x):
+        return x.view(x.size(0), *self.outer_shape)
 
 # Sample from the Gumbel-Softmax distribution and optionally discretize.
 class GumbelSoftmax(nn.Module):
 
-  def __init__(self, f_dim, c_dim):
-    super(GumbelSoftmax, self).__init__()
-    self.logits = nn.Linear(f_dim, c_dim)
-    self.f_dim = f_dim
-    self.c_dim = c_dim
-     
-  def sample_gumbel(self, shape, is_cuda=False, eps=1e-20):
-    U = torch.rand(shape)
-    if is_cuda:
-      U = U.cuda()
-    return -torch.log(-torch.log(U + eps) + eps)
+    def __init__(self, f_dim, c_dim):
+        super(GumbelSoftmax, self).__init__()
+        self.logits = nn.Linear(f_dim, c_dim)
+        self.f_dim = f_dim
+        self.c_dim = c_dim
+         
+    def sample_gumbel(self, shape, is_cuda=False, eps=1e-20):
+        U = torch.rand(shape)
+        if is_cuda:
+            U = U.cuda()
+        return -torch.log(-torch.log(U + eps) + eps)
 
-  def gumbel_softmax_sample(self, logits, temperature):
-    y = logits + self.sample_gumbel(logits.size(), logits.is_cuda)
-    return F.softmax(y / temperature, dim=-1)
+    def gumbel_softmax_sample(self, logits, temperature):
+        y = logits + self.sample_gumbel(logits.size(), logits.is_cuda)
+        return F.softmax(y / temperature, dim=-1)
 
-  def gumbel_softmax(self, logits, temperature, hard=False):
-    """
-    ST-gumple-softmax
-    input: [*, n_class]
-    return: flatten --> [*, n_class] an one-hot vector
-    """
-    #categorical_dim = 10
-    y = self.gumbel_softmax_sample(logits, temperature)
+    def gumbel_softmax(self, logits, temperature, hard=False):
+        """
+        ST-gumple-softmax
+        input: [*, n_class]
+        return: flatten --> [*, n_class] an one-hot vector
+        """
+        #categorical_dim = 10
+        y = self.gumbel_softmax_sample(logits, temperature)
 
-    if not hard:
-        return y
+        if not hard:
+                return y
 
-    shape = y.size()
-    _, ind = y.max(dim=-1)
-    y_hard = torch.zeros_like(y).view(-1, shape[-1])
-    y_hard.scatter_(1, ind.view(-1, 1), 1)
-    y_hard = y_hard.view(*shape)
-    # Set gradients w.r.t. y_hard gradients w.r.t. y
-    y_hard = (y_hard - y).detach() + y
-    return y_hard 
-  
-  def forward(self, x, temperature=1.0, hard=False):
-    logits = self.logits(x).view(-1, self.c_dim)
-    prob = F.softmax(logits, dim=-1)
-    y = self.gumbel_softmax(logits, temperature, hard)
-    return logits, prob, y
+        shape = y.size()
+        _, ind = y.max(dim=-1)
+        y_hard = torch.zeros_like(y).view(-1, shape[-1])
+        y_hard.scatter_(1, ind.view(-1, 1), 1)
+        y_hard = y_hard.view(*shape)
+        # Set gradients w.r.t. y_hard gradients w.r.t. y
+        y_hard = (y_hard - y).detach() + y
+        return y_hard 
+    
+    def forward(self, x, temperature=1.0, hard=False):
+        logits = self.logits(x).view(-1, self.c_dim)
+        prob = F.softmax(logits, dim=-1)
+        y = self.gumbel_softmax(logits, temperature, hard)
+        return logits, prob, y
 
 # Sample from a Gaussian distribution
 class Gaussian(nn.Module):
-  def __init__(self, in_dim, z_dim):
-    super(Gaussian, self).__init__()
-    self.mu = nn.Linear(in_dim, z_dim)
-    self.var = nn.Linear(in_dim, z_dim)
+    def __init__(self, in_dim, z_dim):
+        super(Gaussian, self).__init__()
+        self.mu = nn.Linear(in_dim, z_dim)
+        self.var = nn.Linear(in_dim, z_dim)
 
-  def reparameterize(self, mu, var):
-    std = torch.sqrt(var + 1e-10)
-    noise = torch.randn_like(std)
-    z = mu + noise * std
-    return z      
+    def reparameterize(self, mu, var):
+        std = torch.sqrt(var + 1e-10)
+        noise = torch.randn_like(std)
+        z = mu + noise * std
+        return z            
 
-  def forward(self, x):
-    mu = self.mu(x)
-    var = F.softplus(self.var(x))
-    z = self.reparameterize(mu, var)
-    return mu, var, z 
+    def forward(self, x):
+        mu = self.mu(x)
+        var = F.softplus(self.var(x))
+        z = self.reparameterize(mu, var)
+        return mu, var, z 
 
 
 
@@ -133,6 +133,7 @@ class fluxTransformerModel(nn.Module):
     def __init__(self, spectra_length,
                  flux_embd_dim, 
                  wavelength_embd_dim, 
+                 phase_embd_dim,
                  num_heads, 
                  ff_dim, 
                  num_layers,
@@ -144,10 +145,12 @@ class fluxTransformerModel(nn.Module):
                                                  num_heads, ff_dim, dropout) 
                                                     for _ in range(num_layers)] 
                                                 )
+        self.phasefc = nn.Linear(phase_embd_dim, bottleneck_dim) # expand phase to bottleneck
         self.contextfc = nn.Linear(bottleneck_dim, flux_embd_dim + wavelength_embd_dim ) # expand bottleneck to flux and wavelength
-    def forward(self, wavelength_embd, bottleneck, mask=None):
+    def forward(self, wavelength_embd, phase_embd,bottleneck, mask=None):
         x = torch.cat([self.init_flux_embd.init_flux_embd[None, :, :], wavelength_embd], dim=-1)
         h = x
+        bottleneck = torch.cat([bottleneck, self.phasefc(phase_embd)], dim=1) # concate phase embd to bottleneck, in sequence dimension
         bottleneck = self.contextfc(bottleneck)
         for transformerblock in self.transformerblocks:
             h = transformerblock(h, bottleneck, mask=mask)
@@ -158,6 +161,7 @@ class bottleneckTransformerModel(nn.Module):
     def __init__(self, bottleneck_length,
                  flux_embd_dim, 
                  wavelength_embd_dim,
+                 phase_embd_dim,
                  num_heads, 
                  num_layers,
                  bottleneck_dim,
@@ -165,11 +169,16 @@ class bottleneckTransformerModel(nn.Module):
         super(bottleneckTransformerModel, self).__init__()
         self.initbottleneck = nn.Parameter(torch.randn(bottleneck_length, flux_embd_dim + wavelength_embd_dim))
         self.bottleneckfc = nn.Linear(flux_embd_dim + wavelength_embd_dim, bottleneck_dim)
+        self.phasefc = nn.Linear(phase_embd_dim, flux_embd_dim + wavelength_embd_dim) # expand phase to bottleneck
         self.transformerblocks =  nn.ModuleList( [TransformerBlock(flux_embd_dim + wavelength_embd_dim, 
                                                     num_heads, ff_dim, dropout) 
                                                  for _ in range(num_layers)] )
-    def forward(self, wavelength_embd, flux_embd, mask=None):
+    def forward(self, wavelength_embd, flux_embd, phase_embd, mask=None):
         flux = torch.cat([flux_embd, wavelength_embd], dim=-1)
+        flux = torch.cat([flux, self.phasefc(phase_embd)], dim=1) # concate phase embd to flux, in sequence
+        if mask is not None:
+           # add a false at end to account for the added phase embd
+           mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool()], dim=1)
         x = self.initbottleneck[None, :, :]
         h = x
         for transformerblock in self.transformerblocks:
