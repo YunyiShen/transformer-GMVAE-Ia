@@ -36,13 +36,6 @@ class vanillaVAE:
     self.gaussian_size = args.gaussian_size
     self.input_size = args.input_size
 
-    # gumbel
-    self.init_temp = args.init_temp
-    self.decay_temp = args.decay_temp
-    self.hard_gumbel = args.hard_gumbel
-    self.min_temp = args.min_temp
-    self.decay_temp_rate = args.decay_temp_rate
-    self.gumbel_temp = self.init_temp
 
     self.network = GMVAENet(self.input_size, self.gaussian_size, self.num_classes)
     self.losses = LossFunctions()

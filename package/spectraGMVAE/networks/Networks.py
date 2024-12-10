@@ -229,7 +229,54 @@ class vanillaSpectraGenerativeNet(nn.Module):
         output = {'x_rec': x_rec}
         return output
 
+class SpectravanillaVAENet(nn.Module):
+    def __init__(self, spectra_length,
+                 flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout=0.1):
+        super(SpectravanillaVAENet, self).__init__()
 
+        self.inference = SpectraInferenceNet(flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout)
+        self.generative = SpectraGenerativeNet(spectra_length,
+                 flux_embd_dim, 
+                wavelength_embd_dim, 
+                num_heads, 
+                ff_dim, 
+                num_layers,
+                bottleneck_dim,
+                num_classes,
+                dropout)
+
+        # weight initialization
+        for m in self.modules():
+            if type(m) == nn.Linear or type(m) == nn.Conv2d or type(m) == nn.ConvTranspose2d:
+                torch.nn.init.xavier_normal_(m.weight)
+                if m.bias.data is not None:
+                    init.constant_(m.bias, 0) 
+
+    def forward(self, flux, wavelength, mask = None, temperature=1.0, hard=0):
+        #x = x.view(x.size(0), -1)
+        out_inf = self.inference(flux, wavelength, mask)
+        z = out_inf['gaussian']
+        out_gen = self.generative(wavelength, z, mask)
+        
+        # merge output
+        output = out_inf
+        for key, value in out_gen.items():
+            output[key] = value
+        return output
 
 # reduce dimension
 class SpectraInferenceNet(nn.Module):

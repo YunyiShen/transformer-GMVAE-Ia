@@ -1,10 +1,7 @@
 """
 ---------------------------------------------------------------------
--- Author: Jhosimar George Arias Figueroa
+-- some useful layers by Jhosimar George Arias Figueroa
 ---------------------------------------------------------------------
-
-Custom Layers
-
 """
 import torch
 from torch import nn
@@ -89,8 +86,12 @@ class Gaussian(nn.Module):
     return mu, var, z 
 
 
-############## transformers ##############
 
+"""
+---------------------------------------------------------------------
+-- ############## our transformers ##############
+---------------------------------------------------------------------
+"""
 
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads, ff_dim, dropout=0.1):
@@ -101,7 +102,7 @@ class TransformerBlock(nn.Module):
                                                 dropout=dropout, batch_first=True)
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, ff_dim),
-            nn.ReLU(),
+            nn.GELU(),
             nn.Linear(ff_dim, embed_dim),
         )
         self.layernorm1 = nn.LayerNorm(embed_dim)
@@ -146,10 +147,11 @@ class fluxTransformerModel(nn.Module):
         self.contextfc = nn.Linear(bottleneck_dim, flux_embd_dim + wavelength_embd_dim ) # expand bottleneck to flux and wavelength
     def forward(self, wavelength_embd, bottleneck, mask=None):
         x = torch.cat([self.init_flux_embd.init_flux_embd[None, :, :], wavelength_embd], dim=-1)
+        h = x
         bottleneck = self.contextfc(bottleneck)
         for transformerblock in self.transformerblocks:
-            x = transformerblock(x, bottleneck, mask=mask)
-        return x
+            h = transformerblock(h, bottleneck, mask=mask)
+        return x + h # residual connection
 
 # this will generate bottleneck, in encoder
 class bottleneckTransformerModel(nn.Module):
@@ -169,9 +171,10 @@ class bottleneckTransformerModel(nn.Module):
     def forward(self, wavelength_embd, flux_embd, mask=None):
         flux = torch.cat([flux_embd, wavelength_embd], dim=-1)
         x = self.initbottleneck[None, :, :]
+        h = x
         for transformerblock in self.transformerblocks:
-            x = transformerblock(x, flux, key_padding_mask=mask)
-        return self.bottleneckfc(x)
+            h = transformerblock(h, flux, key_padding_mask=mask)
+        return self.bottleneckfc(x+h) # residual connection
         
 
 

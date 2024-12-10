@@ -32,7 +32,7 @@ class LossFunctions:
       return loss.sum(-1).mean()
 
 
-    def reconstruction_loss(self, real, predicted, rec_type='mse' ):
+    def reconstruction_loss(self, real, predicted, rec_type='mse', mask=None):
       """Reconstruction loss between the true and predicted outputs
          mse = (1/n)*Σ(real - predicted)^2
          bce = (1/n) * -Σ(real*log(predicted) + (1 - real)*log(1 - predicted))
@@ -51,7 +51,10 @@ class LossFunctions:
         loss = F.binary_cross_entropy(predicted, real, reduction='none')
       else:
         raise "invalid loss function... try bce or mse..."
-      return loss.sum(-1).mean()
+      if mask is None:
+        return loss.sum(-1).mean()
+      else:
+        return (loss * (1 - mask)).sum(-1)/(1 - mask).sum(-1)
 
 
     def log_normal(self, x, mu, var):
