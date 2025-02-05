@@ -2,9 +2,9 @@
 
 from setuptools import setup
 
-setup(name='spectraGMVAE',
+setup(name='VAESNe',
       version='0.0.1',
-      description='transformer based GMVAE for spectra data',
+      description='transformer based VAE for SNe spectra and photometry data',
       author='Yunyi Shen',
       packages=[],
      )

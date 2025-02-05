@@ -1,11 +1,80 @@
-"""
----------------------------------------------------------------------
--- some useful layers by Jhosimar George Arias Figueroa
----------------------------------------------------------------------
-"""
 import torch
 from torch import nn
 from torch.nn import functional as F
+
+class learnable_fourier_encoding(nn.Module):
+    def __init__(self, dim = 64):
+        super(learnable_fourier_encoding, self).__init__()
+        self.freq = nn.Linear(1, dim, bias=False)
+        self.fc1 = nn.Linear(2 * dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+
+    def forward(self, x):
+        # x: [batch_size, seq_len]
+        x = x[:, :, None]
+        encoding = torch.cat([torch.sin(self.freq(x)), 
+                              torch.cos(self.freq(x))], dim=-1)
+        encoding = nn.ReLU( self.fc1(encoding) )
+        encoding = self.fc2(encoding)
+        return encoding
+
+
+class SinusoidalPositionalEmbedding(nn.Module):
+    def __init__(self, dim = 64):
+        super().__init__()
+        self.dim = dim
+        self.div_term = torch.exp(torch.arange(0, dim, 2).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        # Create the positional encoding matrix
+
+    def forward(self, x):
+        # x: [batch_size, seq_len]
+        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:])
+        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:])
+        return torch.cat([sine, cosine], dim=-1)
+
+class SinusoidalMLPPositionalEmbedding(nn.Module):
+    def __init__(self, dim = 64):
+        super().__init__()
+        self.dim = dim
+        self.div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
+        self.fc1 = nn.Linear(dim, dim)
+        self.fc2 = nn.Linear(dim, dim)
+
+    def forward(self, x):
+        # x: [batch_size, seq_len]
+        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:])
+        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:])
+        encoding = torch.cat([sine, cosine], dim=-1)
+        encoding = nn.ReLU( self.fc1(encoding) )
+        encoding = self.fc2(encoding)
+        return encoding
+
+class singlelayerMLP(nn.Module):
+    def __init__(self, in_dim, out_dim):
+        super(singlelayerMLP, self).__init__()
+        self.fc1 = nn.Linear(in_dim, in_dim)
+        self.fc2 = nn.Linear(in_dim, out_dim)
+
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = self.fc2(x)
+        return x
+    
+class MLP(nn.Module):
+    def __init__(self, in_dim, out_dim, hidden_dim = [64,64]):
+        super(MLP, self).__init__()
+        layers = []
+        for i in range(len(hidden_dim)):
+            if i == 0:
+                layers.append(nn.Linear(in_dim, hidden_dim[i]))
+            else:
+                layers.append(nn.Linear(hidden_dim[i-1], hidden_dim[i]))
+            layers.append(nn.ReLU())
+        layers.append(nn.Linear(hidden_dim[-1], out_dim))
+        self.mlp = nn.Sequential(*layers)
+    
+    def forward(self, x):
+        return self.mlp(x)
 
 
 class RelativePosition(nn.Module):
@@ -23,8 +92,8 @@ class RelativePosition(nn.Module):
         distance_mat = range_vec_k[None, :] - range_vec_q[:, None]
         distance_mat_clipped = torch.clamp(distance_mat, -self.max_relative_position, self.max_relative_position)
         final_mat = distance_mat_clipped + self.max_relative_position
-        final_mat = torch.LongTensor(final_mat).cuda()
-        embeddings = self.embeddings_table[final_mat].cuda()
+        final_mat = torch.LongTensor(final_mat).to(self.embeddings_table.device)
+        embeddings = self.embeddings_table[final_mat].to(self.embeddings_table.device)
 
         return embeddings
 
@@ -186,14 +255,6 @@ class Gaussian(nn.Module):
         z = self.reparameterize(mu, var)
         return mu, var, z 
 
-
-
-"""
----------------------------------------------------------------------
--- ############## our transformers ##############
----------------------------------------------------------------------
-"""
-
 class TransformerBlock(nn.Module):
     def __init__(self, embed_dim, num_heads, ff_dim, dropout=0.1):
         super(TransformerBlock, self).__init__()
@@ -228,76 +289,3 @@ class TransformerBlock(nn.Module):
 
         return x
 
-
-# this will generate flux, in decoder
-class fluxTransformerModel(nn.Module):
-    def __init__(self, spectra_length,
-                 flux_embd_dim, 
-                 wavelength_embd_dim, 
-                 phase_embd_dim,
-                 num_heads, 
-                 ff_dim, 
-                 num_layers,
-                 bottleneck_dim,
-                 dropout=0.1):
-        super(fluxTransformerModel, self).__init__()
-        self.init_flux_embd = nn.Parameter(torch.randn(spectra_length, flux_embd_dim))
-        self.transformerblocks = nn.ModuleList( [TransformerBlock(flux_embd_dim + wavelength_embd_dim, 
-                                                 num_heads, ff_dim, dropout) 
-                                                    for _ in range(num_layers)] 
-                                                )
-        self.phasefc = nn.Linear(phase_embd_dim, bottleneck_dim) # expand phase to bottleneck
-        self.contextfc = nn.Linear(bottleneck_dim, flux_embd_dim + wavelength_embd_dim ) # expand bottleneck to flux and wavelength
-    def forward(self, wavelength_embd, phase_embd,bottleneck, mask=None):
-        x = torch.cat([self.init_flux_embd.init_flux_embd[None, :, :], wavelength_embd], dim=-1)
-        h = x
-        bottleneck = torch.cat([bottleneck, self.phasefc(phase_embd)], dim=1) # concate phase embd to bottleneck, in sequence dimension
-        bottleneck = self.contextfc(bottleneck)
-        for transformerblock in self.transformerblocks:
-            h = transformerblock(h, bottleneck, mask=mask)
-        return x + h # residual connection
-
-# this will generate bottleneck, in encoder
-class bottleneckTransformerModel(nn.Module):
-    def __init__(self, bottleneck_length,
-                 flux_embd_dim, 
-                 wavelength_embd_dim,
-                 phase_embd_dim,
-                 num_heads, 
-                 num_layers,
-                 bottleneck_dim,
-                 ff_dim, dropout=0.1):
-        super(bottleneckTransformerModel, self).__init__()
-        self.initbottleneck = nn.Parameter(torch.randn(bottleneck_length, flux_embd_dim + wavelength_embd_dim))
-        self.bottleneckfc = nn.Linear(flux_embd_dim + wavelength_embd_dim, bottleneck_dim)
-        self.phasefc = nn.Linear(phase_embd_dim, flux_embd_dim + wavelength_embd_dim) # expand phase to bottleneck
-        self.transformerblocks =  nn.ModuleList( [TransformerBlock(flux_embd_dim + wavelength_embd_dim, 
-                                                    num_heads, ff_dim, dropout) 
-                                                 for _ in range(num_layers)] )
-    def forward(self, wavelength_embd, flux_embd, phase_embd, mask=None):
-        flux = torch.cat([flux_embd, wavelength_embd], dim=-1)
-        flux = torch.cat([flux, self.phasefc(phase_embd)], dim=1) # concate phase embd to flux, in sequence
-        if mask is not None:
-           # add a false at end to account for the added phase embd
-           mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool()], dim=1)
-        x = self.initbottleneck[None, :, :]
-        h = x
-        for transformerblock in self.transformerblocks:
-            h = transformerblock(h, flux, key_padding_mask=mask)
-        return self.bottleneckfc(x+h) # residual connection
-        
-
-
-
-class TransformerModel(nn.Module):
-    def __init__(self, embed_dim, num_heads, ff_dim, num_layers, dropout=0.1):
-        super(TransformerModel, self).__init__()
-        self.layers = nn.ModuleList([
-            TransformerBlock(embed_dim, num_heads, ff_dim, dropout) 
-            for _ in range(num_layers)
-        ])
-
-    def forward(self, x, context=None):
-        for layer in self.layers:
-            x = layer(x, context)
-        return x

@@ -1,19 +1,41 @@
-# -*- coding: utf-8 -*-
+from torch import nn
+from torch.nn import functional as F
+import torch
+import numpy as np
+
+class VAEloss(nn.Module):
+    def __init__(self, beta=1.0):
+        super(VAEloss, self).__init__()
+        self.beta = beta
+
+    def forward(self, x, x_rec, mu, var, mask=None):
+        # Reconstruction loss
+        if mask is not None:
+            rec_loss = F.mse_loss(x_rec, x, reduction='none')
+            rec_loss = rec_loss * mask
+            rec_loss = rec_loss.sum() / mask.sum()
+        else:
+            rec_loss = F.mse_loss(x_rec, x, reduction='mean')
+        
+        # flatten the latent variables
+        mu = mu.view(mu.size(0), -1)
+        var = var.view(var.size(0), -1)
+        # KL divergence
+        kl_loss = -0.5 * torch.mean(1 + torch.log(var) - mu.pow(2) - var)
+        
+        return rec_loss, self.beta * kl_loss
+
+
 """
 ---------------------------------------------------------------------
 -- Author: Jhosimar George Arias Figueroa
 ---------------------------------------------------------------------
 
-Loss functions used for training our model
+Loss functions used for training GMVAE model
 
 """
-import math
-import torch
-import numpy as np
-from torch import nn
-from torch.nn import functional as F
 
-class LossFunctions:
+class GMVAELossFunctions:
     eps = 1e-8
 
     def mean_squared_error(self, real, predictions):

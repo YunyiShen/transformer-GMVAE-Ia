@@ -10,11 +10,12 @@ import torch
 import numpy as np
 from torch import nn, optim
 from torch.utils.data.sampler import SubsetRandomSampler
-from networks.Networks import *
-from losses.LossFunctions import *
-from metrics.Metrics import *
+from package.VAESNe.networks.SpectraNetworks import *
+from losses import *
+from package.VAESNe.Metrics import *
 import matplotlib.pyplot as plt
 from networks.transformernet import transformerInferenceNet, transformerGenerativeNet
+from networks.SpectraLayers import SinusoidalPositionalEmbedding
 
 class SpectraGMVAE:
 

@@ -1,18 +1,10 @@
-"""
----------------------------------------------------------------------
--- Author: Jhosimar George Arias Figueroa
----------------------------------------------------------------------
-
-Gaussian Mixture Variational Autoencoder for Unsupervised Clustering
-
-"""
 import torch
 import numpy as np
 from torch import nn, optim
 from torch.utils.data.sampler import SubsetRandomSampler
-from networks.Networks import *
-from losses.LossFunctions import *
-from metrics.Metrics import *
+from networks.SpectraNetworks import *
+from losses import *
+from package.VAESNe.Metrics import *
 import matplotlib.pyplot as plt
 
 class vanillaVAE:
