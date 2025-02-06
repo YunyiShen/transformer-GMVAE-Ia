@@ -5,9 +5,13 @@ from .losses import VAEloss
 from .Metrics import *
 import matplotlib.pyplot as plt
 import math
+import gc
 
 
-def training_step(network, optimizer, data_loader, loss_fn = VAEloss(beta = 1.)):
+
+
+def training_step(network, optimizer, data_loader, 
+                  loss_fn = VAEloss(beta = 1.)):
     """Train the model for one epoch
 
     Args:
@@ -27,11 +31,15 @@ def training_step(network, optimizer, data_loader, loss_fn = VAEloss(beta = 1.))
     device = next(network.parameters()).device
     for (flux, time, band, mask) in data_loader: # flux, time, band, mask for photometry and flux, wavelength, phase, mask for spectra
         optimizer.zero_grad()
-        out_net = network(flux.to(device), 
-                          time.to(device), 
-                          band.to(device), 
-                          mask.to(device))
-        rec_loss, kl_loss = loss_fn(flux.to(device), 
+        flux = flux.to(device)
+        time = time.to(device)
+        band = band.to(device)
+        mask = mask.to(device)
+        out_net = network(flux, 
+                          time, 
+                          band, 
+                          mask)
+        rec_loss, kl_loss = loss_fn(flux, 
                                     out_net['reconstruction'], 
                                     out_net['mean'],
                                     out_net['var'],
@@ -43,6 +51,9 @@ def training_step(network, optimizer, data_loader, loss_fn = VAEloss(beta = 1.))
         rec_loss += rec_loss.item()
         kl_loss += kl_loss.item()
         num_batches += 1.
+        del out_net, loss # Free memory
+        gc.collect()
+        torch.cuda.empty_cache()
     return [rec_loss / num_batches, kl_loss / num_batches]
 
 
@@ -65,11 +76,15 @@ def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.)):
     rec_loss = 0.
     kl_loss = 0.
     for (flux, time, band, mask) in data_loader:
-        out_net = network(flux.to(device), 
-                          time.to(device), 
-                          band.to(device), 
-                          mask.to(device))
-        rec_loss, kl_loss = loss_fn(flux.to(device), 
+        flux = flux.to(device)
+        time = time.to(device)
+        band = band.to(device)
+        mask = mask.to(device)
+        out_net = network(flux, 
+                          time, 
+                          band, 
+                          mask)
+        rec_loss, kl_loss = loss_fn(flux, 
                                     out_net['reconstruction'], 
                                     out_net['mean'],
                                     out_net['var'],
@@ -78,6 +93,9 @@ def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.)):
         total_loss += loss.item()
         rec_loss += rec_loss.item()
         kl_loss += kl_loss.item()
+        del out_net, loss # Free memory
+        gc.collect()
+        torch.cuda.empty_cache()
         num_batches += 1.
     return [rec_loss / num_batches, kl_loss / num_batches]
 
@@ -103,17 +121,21 @@ def train(network,
     network.to(device)
     if loss_fn is None:
         loss_fn = VAEloss(beta = 1.).to(device)
-    optimizer = optim.Adam(network.parameters(), lr=learning_rate)
+    optimizer = optim.AdamW(network.parameters(), lr=learning_rate)
     train_history_lost, val_history_loss = [], []
     for epoch in range(1, num_epochs + 1):
         train_loss = training_step(network, optimizer, train_loader, loss_fn)
         val_loss = validation_step(network, val_loader, loss_fn)
         train_history_lost.append(train_loss)
         val_history_loss.append(val_loss)
-        print('(Epoch %d / %d) Train_Loss: %.3lf; Val_Loss: %.3lf  ' % \
+        print('(Epoch %d / %d losses) Train_recon: %.3lf; Train_kl: %.3lf; Val_recon: %.3lf; Val_kl: %.3lf  ' % \
               (epoch, num_epochs, 
-               math.log10(train_loss[0] + train_loss[1]), 
-               math.log10(val_loss[0] + val_loss[1])))
+               math.log10(train_loss[0]), 
+               math.log10(train_loss[1]), 
+               math.log10(val_loss[0] ),
+               math.log10(val_loss[1]) 
+               
+               ))
 
 
     return {'train_loss': train_history_lost, 'val_loss': val_history_loss}

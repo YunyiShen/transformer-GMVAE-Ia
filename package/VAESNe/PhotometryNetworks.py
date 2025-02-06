@@ -17,15 +17,38 @@ class vanillaPhotometricInferenceNet(nn.Module):
         super(vanillaPhotometricInferenceNet, self).__init__()
 
         # q(y|x) and q(z|y,x) before GumbelSoftmax and Gaussian
+        
         self.inference_transformer = photometricTransformerEncoder(
                                  num_bands, # mean, variance, class
-                                 latent_len,
-                                 2 * latent_dim,
+                                 2 * latent_len,
+                                 latent_dim,
                                  model_dim, 
                                  num_heads, 
                                  ff_dim, 
                                  num_layers,
                                  dropout)
+        '''
+        self.inference_transformer_mu = photometricTransformerEncoder(
+                                 num_bands, # mean, variance, class
+                                 latent_len,
+                                 latent_dim,
+                                 model_dim, 
+                                 num_heads, 
+                                 ff_dim, 
+                                 num_layers,
+                                 dropout)
+        self.inference_transformer_sigma = photometricTransformerEncoder(
+                                 num_bands, # mean, variance, class
+                                 latent_len,
+                                 latent_dim,
+                                 model_dim, 
+                                 num_heads, 
+                                 ff_dim, 
+                                 num_layers,
+                                 dropout)
+
+        '''
+
         self.latent_dim = latent_dim
         self.latent_len = latent_len
                                  
@@ -37,6 +60,7 @@ class vanillaPhotometricInferenceNet(nn.Module):
         return z    
 
     def forward(self, flux, time, band, mask = None):
+        
         bottleneck = self.inference_transformer(flux, 
                                                 time, 
                                                 band,
@@ -45,8 +69,21 @@ class vanillaPhotometricInferenceNet(nn.Module):
         
         # q(z|x,y)
         #breakpoint()
-        mu = bottleneck[:,:,:self.latent_dim] # should it be dimension or should it be length??
-        var = F.softplus( bottleneck[:,:,self.latent_dim:])
+        #mu = bottleneck[:,:,:self.latent_dim] # should it be dimension or should it be length??
+        #var = F.softplus( bottleneck[:,:,self.latent_dim:])
+        mu = bottleneck[:,:self.latent_len,:]
+        var = F.softplus( bottleneck[:,self.latent_len:,:])
+        '''
+        mu = self.inference_transformer_mu(flux, 
+                                            time, 
+                                            band,
+                                            mask)
+        var = F.softplus(self.inference_transformer_sigma(flux,
+                                            time,
+                                            band,
+                                            mask))
+                                           
+        '''
         z = self.reparameterize(mu, var)
 
         output = {'mean': mu, 'var': var, 'gaussian': z}

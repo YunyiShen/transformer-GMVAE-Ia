@@ -1,4 +1,5 @@
 package/VAESNe/legacy_unfinished/*
+package/VAESNe/__pycache__
 package/VAESNe.egg-info/*
 ckpt/*
 *.sh.log*

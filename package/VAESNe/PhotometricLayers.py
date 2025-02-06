@@ -38,7 +38,7 @@ class photometricTransformerDecoder(nn.Module):
         self.model_dim = model_dim
         self.solid_embd = SinusoidalMLPPositionalEmbedding(model_dim)
         self.bandembd = nn.Embedding(num_bands, model_dim)
-        self.contextfc = nn.Linear(bottleneck_dim, model_dim) # expand bottleneck to flux and time
+        self.contextfc = MLP(bottleneck_dim, model_dim, [model_dim]) # expand bottleneck to flux and time
         self.get_photo = singlelayerMLP(model_dim, 1)
         self.donotmask = donotmask
     
@@ -77,7 +77,7 @@ class photometricTransformerEncoder(nn.Module):
         self.model_dim = model_dim
         self.time_embd = SinusoidalMLPPositionalEmbedding(model_dim)
         self.initbottleneck = nn.Parameter(torch.randn(bottleneck_length, model_dim))
-        self.bottleneckfc = nn.Linear(model_dim, bottleneck_dim)
+        self.bottleneckfc = singlelayerMLP(model_dim, bottleneck_dim)
         self.transformerblocks =  nn.ModuleList( [TransformerBlock(model_dim, 
                                                     num_heads, ff_dim, dropout) 
                                                  for _ in range(num_layers)] )

@@ -21,14 +21,15 @@ class spectraTransformerDecoder(nn.Module):
                  dropout=0.1):
         super(spectraTransformerDecoder, self).__init__()
         self.init_flux_embd = nn.Parameter(torch.randn(spectra_length, model_dim))
-        self.transformerblocks = nn.ModuleList( [TransformerBlock(model_dim + model_dim, 
+        self.transformerblocks = nn.ModuleList( [TransformerBlock(model_dim, 
                                                  num_heads, ff_dim, dropout) 
                                                     for _ in range(num_layers)] 
                                                 )
         self.wavelength_embd_layer = SinusoidalMLPPositionalEmbedding(model_dim)
         self.phase_embd_layer = SinusoidalMLPPositionalEmbedding(model_dim)
-        self.contextfc = nn.Linear(bottleneck_dim, model_dim) # expand bottleneck to flux and wavelength
-        #self.get_flux = singlelayerMLP(model_dim, 1)
+        self.contextfc = MLP(bottleneck_dim, model_dim, [model_dim]) # expand bottleneck to flux and time
+        #self.get_photo = singlelayerMLP(model_dim, 1) # expand bottleneck to flux and wavelength
+        self.get_flux = singlelayerMLP(model_dim, 1)
     
     def forward(self, wavelength, phase, bottleneck, mask=None):
         '''
@@ -37,13 +38,14 @@ class spectraTransformerDecoder(nn.Module):
         bottleneck: bottleneck from the encoder (batch_size, bottleneck_length, bottleneck_dim)
         '''
         wavelength_embd = self.wavelength_embd_layer(wavelength)
-        phase_embd = self.phase_embd_layer(phase)
-        x =  self.init_flux_embd[None,:,:] + wavelength_embd + phase_embd
+        phase_embd = self.phase_embd_layer(phase[:, None])
+        x =  self.init_flux_embd[None,:,:] + wavelength_embd #+ phase_embd
         h = x
         bottleneck = self.contextfc(bottleneck)
+        bottleneck = torch.concat([bottleneck, phase_embd], dim=1)
         for transformerblock in self.transformerblocks:
             h = transformerblock(h, bottleneck, mask=mask)
-        return self.get_flux(x + h) # residual connection
+        return self.get_flux(x + h).squeeze(-1) # residual connection
 
 # this will generate bottleneck, in encoder
 class spectraTransformerEncoder(nn.Module):
@@ -59,22 +61,24 @@ class spectraTransformerEncoder(nn.Module):
         self.phase_embd_layer = SinusoidalMLPPositionalEmbedding(model_dim)# expand phase to bottleneck
         self.wavelength_embd_layer = SinusoidalMLPPositionalEmbedding(model_dim)# expand wavelength to bottleneck
         self.flux_embd = nn.Linear(1, model_dim)
-        self.transformerblocks =  nn.ModuleList( [TransformerBlock(model_dim + model_dim, 
+        self.transformerblocks =  nn.ModuleList( [TransformerBlock(model_dim, 
                                                     num_heads, ff_dim, dropout) 
                                                  for _ in range(num_layers)] )
         
-        self.bottleneckfc = nn.Linear(model_dim, bottleneck_dim)
+        self.bottleneckfc = singlelayerMLP(model_dim, bottleneck_dim)
 
     def forward(self, wavelength, flux, phase, mask=None):
-        flux_embd = self.flux_embd(flux) + self.wavelength_embd_layer(wavelength)
-        phase_embd = self.phase_embd_layer(phase)
+        
+        flux_embd = self.flux_embd(flux[:, :, None]) + self.wavelength_embd_layer(wavelength)
+        phase_embd = self.phase_embd_layer(phase[:, None])
         context = torch.cat([flux_embd, phase_embd], dim=1) # concatenate flux and phase embd
         if mask is not None:
            # add a false at end to account for the added phase embd
-           mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool()], dim=1)
+           mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool().to(mask.device) ], dim=1)
         x = self.initbottleneck[None, :, :]
         x = x.repeat(context.shape[0], 1, 1)
         h = x
+        
         for transformerblock in self.transformerblocks:
             h = transformerblock(h, context, context_mask=mask)
         return self.bottleneckfc(x+h) # residual connection

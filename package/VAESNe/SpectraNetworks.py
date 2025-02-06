@@ -20,8 +20,9 @@ class vanillaSpectraInferenceNet(nn.Module):
         super(vanillaSpectraInferenceNet, self).__init__()
 
         # q(y|x) and q(z|y,x) before GumbelSoftmax and Gaussian
-        self.inference_transformer = spectraTransformerEncoder(latent_length,
-                 2 * latent_dim,
+        self.inference_transformer = spectraTransformerEncoder(
+                2 * latent_length,
+                 latent_dim,
                  model_dim, 
                  num_heads, 
                  num_layers,
@@ -43,8 +44,8 @@ class vanillaSpectraInferenceNet(nn.Module):
 
         
         # q(z|x,y)
-        mu = bottleneck[:,:,:self.latent_dim]
-        var = F.softplus( bottleneck[:,:,self.latent_dim:])
+        mu = bottleneck[:,:self.latent_length,:]
+        var = F.softplus( bottleneck[:,self.latent_length:,:])
         z = self.reparameterize(mu, var)
 
         output = {'mean': mu, 'var': var, 'gaussian': z}
@@ -79,7 +80,8 @@ class vanillaSpectraGenerativeNet(nn.Module):
     def forward(self, wavelength, phase,z, mask = None):
         x_rec = self.pxz(wavelength, phase, z, mask)
 
-        output = {'x_rec': x_rec}
+        output = {'reconstruction': x_rec}
+        #breakpoint()
         return output
 
 class vanillaSpectraVAENet(nn.Module):
