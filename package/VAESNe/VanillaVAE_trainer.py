@@ -1,9 +1,10 @@
 import torch
 import numpy as np
 from torch import nn, optim
-from losses import VAEloss
-from Metrics import *
+from .losses import VAEloss
+from .Metrics import *
 import matplotlib.pyplot as plt
+import math
 
 
 def training_step(network, optimizer, data_loader, loss_fn = VAEloss(beta = 1.)):
@@ -23,7 +24,7 @@ def training_step(network, optimizer, data_loader, loss_fn = VAEloss(beta = 1.))
     num_batches = 0.
     rec_loss = 0.
     kl_loss = 0.
-    device = network.device
+    device = next(network.parameters()).device
     for (flux, time, band, mask) in data_loader: # flux, time, band, mask for photometry and flux, wavelength, phase, mask for spectra
         optimizer.zero_grad()
         out_net = network(flux.to(device), 
@@ -58,7 +59,7 @@ def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.)):
         average of all loss values, accuracy, nmi
     """
     network.eval()
-    device = network.device
+    device = next(network.parameters()).device
     total_loss = 0.
     num_batches = 0.
     rec_loss = 0.
@@ -87,6 +88,7 @@ def train(network,
           val_loader,
           learning_rate=1e-3,
           num_epochs=100,
+          loss_fn = None,
           device = 'cuda' if torch.cuda.is_available() else 'cpu'
           ):
     """Train the model
@@ -99,19 +101,19 @@ def train(network,
         output: (dict) contains the history of train/val loss
     """
     network.to(device)
-    loss_fn = VAEloss(beta = 1.).to(device)
+    if loss_fn is None:
+        loss_fn = VAEloss(beta = 1.).to(device)
     optimizer = optim.Adam(network.parameters(), lr=learning_rate)
-    optimizer.to(device)
     train_history_lost, val_history_loss = [], []
     for epoch in range(1, num_epochs + 1):
         train_loss = training_step(network, optimizer, train_loader, loss_fn)
-        val_loss = validation_step(network, optimizer, val_loader, loss_fn)
+        val_loss = validation_step(network, val_loader, loss_fn)
         train_history_lost.append(train_loss)
         val_history_loss.append(val_loss)
         print('(Epoch %d / %d) Train_Loss: %.3lf; Val_Loss: %.3lf  ' % \
               (epoch, num_epochs, 
-               train_loss[0] + train_loss[1], 
-               val_loss[0] + val_loss[1]))
+               math.log10(train_loss[0] + train_loss[1]), 
+               math.log10(val_loss[0] + val_loss[1])))
 
 
     return {'train_loss': train_history_lost, 'val_loss': val_history_loss}
@@ -128,7 +130,7 @@ def latent_features(network, data_loader):
        features: (array) array containing the features from the data
     """
     network.eval()
-    device = network.device
+    device = next(network.parameters()).device
     features = []
     with torch.no_grad():
         for (flux, time, band, mask) in data_loader:

@@ -2,7 +2,7 @@ import torch
 import torch.nn.init as init
 from torch import nn
 from torch.nn import functional as F
-from networks.PhotometricLayers import photometricTransformerEncoder, photometricTransformerDecoder
+from .PhotometricLayers import photometricTransformerEncoder, photometricTransformerDecoder
 
 class vanillaPhotometricInferenceNet(nn.Module):
     def __init__(self, 
@@ -44,8 +44,9 @@ class vanillaPhotometricInferenceNet(nn.Module):
 
         
         # q(z|x,y)
-        mu = bottleneck[:,:self.latent_dim,:]
-        var = F.softplus( bottleneck[:,self.latent_dim:,:])
+        #breakpoint()
+        mu = bottleneck[:,:,:self.latent_dim] # should it be dimension or should it be length??
+        var = F.softplus( bottleneck[:,:,self.latent_dim:])
         z = self.reparameterize(mu, var)
 
         output = {'mean': mu, 'var': var, 'gaussian': z}

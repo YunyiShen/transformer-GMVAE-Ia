@@ -28,8 +28,8 @@ class SinusoidalPositionalEmbedding(nn.Module):
 
     def forward(self, x):
         # x: [batch_size, seq_len]
-        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:])
-        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:])
+        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:].to(x.device)) 
+        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:].to(x.device))
         return torch.cat([sine, cosine], dim=-1)
 
 class SinusoidalMLPPositionalEmbedding(nn.Module):
@@ -37,15 +37,15 @@ class SinusoidalMLPPositionalEmbedding(nn.Module):
         super().__init__()
         self.dim = dim
         self.div_term = torch.exp(torch.arange(0, dim).float() * (-torch.log(torch.tensor(10000.0)) / dim))
-        self.fc1 = nn.Linear(dim, dim)
+        self.fc1 = nn.Linear(2 * dim, dim)
         self.fc2 = nn.Linear(dim, dim)
 
     def forward(self, x):
         # x: [batch_size, seq_len]
-        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:])
-        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:])
+        sine = torch.sin(x[:,:,None] * self.div_term[None,None,:].to(x.device))
+        cosine = torch.cos(x[:,:,None] * self.div_term[None,None,:].to(x.device))
         encoding = torch.cat([sine, cosine], dim=-1)
-        encoding = nn.ReLU( self.fc1(encoding) )
+        encoding = F.relu( self.fc1(encoding) )
         encoding = self.fc2(encoding)
         return encoding
 
@@ -256,12 +256,20 @@ class Gaussian(nn.Module):
         return mu, var, z 
 
 class TransformerBlock(nn.Module):
-    def __init__(self, embed_dim, num_heads, ff_dim, dropout=0.1):
+    def __init__(self, embed_dim, num_heads, ff_dim, 
+                 dropout=0.1, 
+                 context_self_attn = False):
         super(TransformerBlock, self).__init__()
         self.self_attn = nn.MultiheadAttention(embed_dim, num_heads, 
                                                dropout=dropout, batch_first=True)
         self.cross_attn = nn.MultiheadAttention(embed_dim, num_heads, 
                                                 dropout=dropout, batch_first=True)
+        if context_self_attn:
+            self.context_self_attn = nn.MultiheadAttention(embed_dim, num_heads, 
+                                                dropout=dropout, batch_first=True)
+            self.layernorm_context = nn.LayerNorm(embed_dim)
+        else:
+            self.context_self_attn = None
         self.ffn = nn.Sequential(
             nn.Linear(embed_dim, ff_dim),
             nn.GELU(),
@@ -272,15 +280,24 @@ class TransformerBlock(nn.Module):
         self.layernorm3 = nn.LayerNorm(embed_dim)
         self.dropout = nn.Dropout(dropout)
 
-    def forward(self, x, context=None, mask=None):
+    def forward(self, x, context=None, mask=None, context_mask=None):
         # we made x [batch, seq_len, embed_dim]
-        # Self-attention
-        attn_output, _ = self.self_attn(x, x, x, attn_mask=mask)
+
+
+        attn_output, _ = self.self_attn(x, x, x, 
+                                        key_padding_mask = mask)
+            # in decoder mask whereever not observed
         x = self.layernorm1(x + self.dropout(attn_output))
 
         # Cross-attention (if context is provided)
         if context is not None:
-            cross_attn_output, _ = self.cross_attn(x, context, context, attn_mask=mask)
+            if self.context_self_attn:
+                context_attn_output, _ = self.context_self_attn(context, context, context,
+                                                                key_padding_mask=context_mask)
+                context = self.layernorm_context(context + self.dropout(context_attn_output))
+            #breakpoint()
+            cross_attn_output, _ = self.cross_attn(x, context, context,
+                                                       key_padding_mask=context_mask)
             x = self.layernorm2(x + self.dropout(cross_attn_output))
 
         # Feedforward

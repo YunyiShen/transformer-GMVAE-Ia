@@ -2,7 +2,7 @@ import torch
 import torch.nn.init as init
 from torch import nn
 from torch.nn import functional as F
-from networks.SpectraLayers import *
+from .SpectraLayers import *
 
 
 """

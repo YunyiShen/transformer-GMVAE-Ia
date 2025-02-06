@@ -2,7 +2,7 @@ import torch
 import torch.nn.init as init
 from torch import nn
 from torch.nn import functional as F
-from networks.SpectraLayers import spectraTransformerDecoder, spectraTransformerEncoder
+from .SpectraLayers import spectraTransformerDecoder, spectraTransformerEncoder
 
 '''
 Adaptations of GMVAE for spectra
@@ -43,8 +43,8 @@ class vanillaSpectraInferenceNet(nn.Module):
 
         
         # q(z|x,y)
-        mu = bottleneck[:,:self.latent_dim,:]
-        var = F.softplus( bottleneck[:,self.latent_dim:,:])
+        mu = bottleneck[:,:,:self.latent_dim]
+        var = F.softplus( bottleneck[:,:,self.latent_dim:])
         z = self.reparameterize(mu, var)
 
         output = {'mean': mu, 'var': var, 'gaussian': z}

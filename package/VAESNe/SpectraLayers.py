@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from networks.util_layers import * # useful base layers
+from .util_layers import * # useful base layers
 
 
 """
@@ -73,9 +73,10 @@ class spectraTransformerEncoder(nn.Module):
            # add a false at end to account for the added phase embd
            mask = torch.cat([mask, torch.zeros(mask.shape[0], 1).bool()], dim=1)
         x = self.initbottleneck[None, :, :]
+        x = x.repeat(context.shape[0], 1, 1)
         h = x
         for transformerblock in self.transformerblocks:
-            h = transformerblock(h, context, key_padding_mask=mask)
+            h = transformerblock(h, context, context_mask=mask)
         return self.bottleneckfc(x+h) # residual connection
         
 

@@ -6,7 +6,7 @@
 import torch
 from torch import nn
 from torch.nn import functional as F
-from networks.util_layers import *
+from .util_layers import *
 
 
 
@@ -27,7 +27,8 @@ class photometricTransformerDecoder(nn.Module):
                  num_heads, 
                  ff_dim, 
                  num_layers,
-                 dropout=0.1):
+                 dropout=0.1, 
+                 donotmask=False):
         super(photometricTransformerDecoder, self).__init__()
         self.init_flux_embd = nn.Parameter(torch.randn(photometry_length, model_dim))
         self.transformerblocks = nn.ModuleList( [TransformerBlock(model_dim, 
@@ -39,6 +40,7 @@ class photometricTransformerDecoder(nn.Module):
         self.bandembd = nn.Embedding(num_bands, model_dim)
         self.contextfc = nn.Linear(bottleneck_dim, model_dim) # expand bottleneck to flux and time
         self.get_photo = singlelayerMLP(model_dim, 1)
+        self.donotmask = donotmask
     
     def forward(self, time, band, bottleneck, mask=None):
         '''
@@ -47,10 +49,13 @@ class photometricTransformerDecoder(nn.Module):
 
         bottleneck: bottleneck from the encoder (batch_size, bottleneck_length, bottleneck_dim)
         '''
+        if self.donotmask:
+            mask = None
         time_embd = self.solid_embd(time)
         band_embd = self.bandembd(band)
-        x = self.init_flux_embd.init_flux_embd[None, :, :] + time_embd + band_embd
+        x = self.init_flux_embd[None, :, :] + time_embd + band_embd
         h = x
+        #breakpoint()
         bottleneck = self.contextfc(bottleneck)
         for transformerblock in self.transformerblocks:
             h = transformerblock(h, bottleneck, mask=mask)
@@ -70,7 +75,7 @@ class photometricTransformerEncoder(nn.Module):
                  dropout=0.1):
         super(photometricTransformerEncoder, self).__init__()
         self.model_dim = model_dim
-        self.time_embd = SinusoidalPositionalEmbedding(model_dim)
+        self.time_embd = SinusoidalMLPPositionalEmbedding(model_dim)
         self.initbottleneck = nn.Parameter(torch.randn(bottleneck_length, model_dim))
         self.bottleneckfc = nn.Linear(model_dim, bottleneck_dim)
         self.transformerblocks =  nn.ModuleList( [TransformerBlock(model_dim, 
@@ -93,9 +98,11 @@ class photometricTransformerEncoder(nn.Module):
                               self.bandembd(band))
 
         x = self.initbottleneck[None, :, :]
+        x = x.repeat(flux.shape[0], 1, 1) # repeat for all batch
         h = x
         for transformerblock in self.transformerblocks:
-            h = transformerblock(h, photomety_embdding, 
-                                 key_padding_mask=mask)
+            h = transformerblock(h, photomety_embdding, mask = None, # do not mask latent representation
+                                 context_mask=mask)
+        #breakpoint()
         return self.bottleneckfc(x+h) # residual connection
         
