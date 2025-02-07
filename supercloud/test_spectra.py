@@ -12,6 +12,8 @@ from VAESNe.SpectraNetworks import vanillaSpectraVAENet
 from VAESNe.VanillaVAE_trainer import train
 from VAESNe.losses import VAEloss
 
+torch.manual_seed(0)
+
 
 data = np.load('../data/goldstein_processed/preprocessed_midfilt_3_centeringFalse_realisticLSST_phase.npz')
 training_idx = data['training_idx']
@@ -47,8 +49,8 @@ train_dataset = TensorDataset(flux, wavelength, phase, mask)
 test_dataset = TensorDataset(flux_test, wavelength_test, phase_test, mask_test)
 test_dataset, val_dataset = random_split(test_dataset, [0.5, 0.5])
 
-train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
+val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True)
 
 
 lr = 1e-4

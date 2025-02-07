@@ -8,6 +8,9 @@ import math
 import gc
 
 
+def safelog10(x):
+    tmp = max(1e-10, x)
+    return math.log10(tmp)
 
 
 def training_step(network, optimizer, data_loader, 
@@ -130,10 +133,10 @@ def train(network,
         val_history_loss.append(val_loss)
         print('(Epoch %d / %d losses) Train_recon: %.3lf; Train_kl: %.3lf; Val_recon: %.3lf; Val_kl: %.3lf  ' % \
               (epoch, num_epochs, 
-               math.log10(train_loss[0]), 
-               math.log10(train_loss[1]), 
-               math.log10(val_loss[0] ),
-               math.log10(val_loss[1]) 
+               safelog10(train_loss[0]), 
+               safelog10(train_loss[1]), 
+               safelog10(val_loss[0] ),
+               safelog10(val_loss[1]) 
                
                ))
 
