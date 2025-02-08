@@ -49,8 +49,8 @@ train_dataset = TensorDataset(flux, wavelength, phase, mask)
 test_dataset = TensorDataset(flux_test, wavelength_test, phase_test, mask_test)
 test_dataset, val_dataset = random_split(test_dataset, [0.5, 0.5])
 
-train_loader = DataLoader(train_dataset, batch_size=16, shuffle=True)
-val_loader = DataLoader(val_dataset, batch_size=16, shuffle=True)
+train_loader = DataLoader(train_dataset, batch_size=32, shuffle=True, pin_memory=True)
+val_loader = DataLoader(val_dataset, batch_size=32, shuffle=True, pin_memory=True)
 
 
 lr = 1e-4
@@ -76,7 +76,10 @@ losses = train(my_vaesne,
                val_loader,
               lr,
               epochs,
-             loss_fn = loss_fn, device = device)
+             loss_fn = loss_fn, 
+             device = device,
+             release_memory = False
+             )
 
 torch.save(my_vaesne, '../ckpt/first_spectra_vaesne.pth')
 

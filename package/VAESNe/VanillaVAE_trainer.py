@@ -14,7 +14,7 @@ def safelog10(x):
 
 
 def training_step(network, optimizer, data_loader, 
-                  loss_fn = VAEloss(beta = 1.)):
+                  loss_fn = VAEloss(beta = 1.), release_memory = False):
     """Train the model for one epoch
 
     Args:
@@ -42,6 +42,12 @@ def training_step(network, optimizer, data_loader,
                           time, 
                           band, 
                           mask)
+        
+        if release_memory:
+            del time, band
+            gc.collect()
+            torch.cuda.empty_cache()
+
         rec_loss, kl_loss = loss_fn(flux, 
                                     out_net['reconstruction'], 
                                     out_net['mean'],
@@ -50,17 +56,19 @@ def training_step(network, optimizer, data_loader,
         loss = rec_loss + kl_loss
         loss.backward()
         optimizer.step()
-        total_loss += loss.item()
-        rec_loss += rec_loss.item()
-        kl_loss += kl_loss.item()
+        total_loss += loss.detach().cpu().item()
+        rec_loss += rec_loss.detach().cpu().item()
+        kl_loss += kl_loss.detach().cpu().item()
         num_batches += 1.
-        del out_net, loss # Free memory
-        gc.collect()
-        torch.cuda.empty_cache()
+        if release_memory:
+            del out_net, loss, flux, mask # Free memory
+            gc.collect()
+            torch.cuda.empty_cache()
+
     return [rec_loss / num_batches, kl_loss / num_batches]
 
 
-def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.)):
+def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.), release_memory = False):
     """validate the model for one epoch
 
     Args:
@@ -87,18 +95,25 @@ def validation_step(network, data_loader, loss_fn = VAEloss(beta = 1.)):
                           time, 
                           band, 
                           mask)
+        if release_memory:
+            del time, band
+            gc.collect()
+            torch.cuda.empty_cache()
+
         rec_loss, kl_loss = loss_fn(flux, 
                                     out_net['reconstruction'], 
                                     out_net['mean'],
                                     out_net['var'],
                                     mask)
         loss = rec_loss + kl_loss
-        total_loss += loss.item()
-        rec_loss += rec_loss.item()
-        kl_loss += kl_loss.item()
-        del out_net, loss # Free memory
-        gc.collect()
-        torch.cuda.empty_cache()
+        total_loss += loss.detach().cpu().item()
+        rec_loss += rec_loss.detach().cpu().item()
+        kl_loss += kl_loss.detach().cpu().item()
+        if release_memory:
+            del out_net, loss, flux, mask # Free memory
+            gc.collect()
+            torch.cuda.empty_cache()
+
         num_batches += 1.
     return [rec_loss / num_batches, kl_loss / num_batches]
 
@@ -110,7 +125,8 @@ def train(network,
           learning_rate=1e-3,
           num_epochs=100,
           loss_fn = None,
-          device = 'cuda' if torch.cuda.is_available() else 'cpu'
+          device = 'cuda' if torch.cuda.is_available() else 'cpu',
+          release_memory = False
           ):
     """Train the model
 
@@ -127,8 +143,9 @@ def train(network,
     optimizer = optim.AdamW(network.parameters(), lr=learning_rate)
     train_history_lost, val_history_loss = [], []
     for epoch in range(1, num_epochs + 1):
-        train_loss = training_step(network, optimizer, train_loader, loss_fn)
-        val_loss = validation_step(network, val_loader, loss_fn)
+        train_loss = training_step(network, optimizer, train_loader, loss_fn, release_memory)
+        with torch.no_grad():
+            val_loss = validation_step(network, val_loader, loss_fn, release_memory)
         train_history_lost.append(train_loss)
         val_history_loss.append(val_loss)
         print('(Epoch %d / %d losses) Train_recon: %.3lf; Train_kl: %.3lf; Val_recon: %.3lf; Val_kl: %.3lf  ' % \
@@ -137,7 +154,6 @@ def train(network,
                safelog10(train_loss[1]), 
                safelog10(val_loss[0] ),
                safelog10(val_loss[1]) 
-               
                ))
 
 
