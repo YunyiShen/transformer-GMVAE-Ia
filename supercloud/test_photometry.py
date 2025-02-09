@@ -61,8 +61,8 @@ my_vaesne = PhotometricVAENet(
     num_bands = 6,
 
     # model parameters
-    latent_len = 2,
-    latent_dim = 3,
+    latent_len = 3,
+    latent_dim = 1,
     model_dim = 32, 
     num_heads = 4, 
     ff_dim = 32, 
@@ -76,5 +76,5 @@ losses = train(my_vaesne,
               epochs,
              loss_fn = loss_fn)
 
-torch.save(my_vaesne, '../ckpt/first_vaesne.pth')
+torch.save(my_vaesne, '../ckpt/first_vaesne_3-1.pth')
 

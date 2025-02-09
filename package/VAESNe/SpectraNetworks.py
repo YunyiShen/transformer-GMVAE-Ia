@@ -122,6 +122,12 @@ class vanillaSpectraVAENet(nn.Module):
     
     def decode(self, wavelength, phase, z, mask = None):
         return self.generative(wavelength, phase, z, mask)
+    
+    def reconstruct(self, flux, wavelength, phase, mask = None):
+        out_inf = self.inference(flux, wavelength, phase, mask)
+        z = out_inf['gaussian']
+        out_gen = self.generative(wavelength, phase, z, mask)
+        return out_gen['reconstruction']
 
     def forward(self, flux, wavelength, phase, mask = None):
         #x = x.view(x.size(0), -1)

@@ -20,14 +20,14 @@ testing_idx = data['testing_idx']
 photo_flux_test, phototime_test, photomask_test = data['photoflux'][testing_idx], data['phototime'][testing_idx], data['photomask'][testing_idx]
 photoband_test = data['photowavelength'][testing_idx]
 
-idx = 10
+idx = 15
 
 photoflux_test = torch.tensor(photo_flux_test, dtype=torch.float32)
 phototime_test = torch.tensor(phototime_test, dtype=torch.float32)
 photomask_test = torch.tensor(photomask_test == 0)
 photoband_test = torch.tensor(photoband_test, dtype=torch.long)
 
-trained_vae = torch.load("../ckpt/first_vaesne.pth",
+trained_vae = torch.load("../ckpt/first_vaesne_3-1.pth",
                          map_location=torch.device('cpu'))
 
 reconstruction = trained_vae.reconstruct(photoflux_test[idx][None,:],
